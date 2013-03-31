@@ -24,3 +24,5 @@ case class UnexpectedTrailingChars(received: String) extends FailureData
 case class UnexpectedChars(received: String) extends FailureData
 
 case object SyntaxError extends FailureData
+
+case class IndentError(anchor: (Int,Int), position: (Int,Int)) extends FailureData

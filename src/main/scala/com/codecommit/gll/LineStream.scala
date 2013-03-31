@@ -9,7 +9,7 @@ import scala.io.Source
  * A lazy character stream with line awareness.  This also provides
  * amortized constant-time {@link CharSequence} access.
  */
-sealed abstract class LineStream(val line: String, val lineNum: Int, val colNum: Int) extends LinearSeq[Char] with CharSequence { outer =>
+sealed abstract class LineStream(val line: String, val lineNum: Int, val colNum: Int, val offset: Int) extends LinearSeq[Char] with CharSequence { outer =>
   override def tail: LineStream = sys.error("yeah, this is annoying")
   
   def charAt(i: Int) = apply(i)
@@ -20,7 +20,7 @@ sealed abstract class LineStream(val line: String, val lineNum: Int, val colNum:
     if (length < 0)
       throw new IllegalArgumentException(length.toString)
     else if (length > 0 && !isEmpty)
-      new LazyLineCons(head, tail take length - 1, line, lineNum, colNum)
+      new LazyLineCons(head, tail take length - 1, line, lineNum, colNum, offset)
     else
       LineNil
   }
@@ -127,7 +127,7 @@ object LineStream {
   }
   
   def apply(reader: Reader): LineStream = {
-    def gen(num: Int): LineStream = {
+    def gen(lineNum: Int, offset: Int): LineStream = {
       def state0(acc: StringBuilder): (String, String) = {
         val c = reader.read()
         
@@ -160,26 +160,26 @@ object LineStream {
       val termLS = if (term.length == 0)
         LineNil
       else if (term.length == 1)
-        new LazyLineCons(term.head, gen(num + 1), line, num, line.length + 1)
+        new LazyLineCons(term.head, gen(lineNum + 1, offset + line.length + 1), line, lineNum, line.length + 1, offset + line.length + 1)
       else if (term.length == 2)
-        new StrictLineCons(term(0), new LazyLineCons(term(1), gen(num + 1), line, num, line.length + 2), line, num, line.length + 1)
+        new StrictLineCons(term(0), new LazyLineCons(term(1), gen(lineNum + 1, offset + line.length + 1), line, lineNum, line.length + 2, offset + line.length + 2), line, lineNum, line.length + 1, offset + line.length + 1)
       else
         sys.error("Line terminator contains more than two characters; cannot process newline!")
       
       val (back, _) = line.foldRight((termLS, line.length)) {
-        case (c, (tail, colNum)) => (new StrictLineCons(c, tail, line, num, colNum), colNum - 1)
+        case (c, (tail, colNum)) => (new StrictLineCons(c, tail, line, lineNum, colNum, offset + colNum), colNum - 1)
       }
       
       back
     }
     
-    gen(1)
+    gen(1, -1)
   }
   
   def unapplySeq(str: LineStream): Option[Seq[Char]] = Some(str)
 }
 
-class LazyLineCons(override val head: Char, _tail: =>LineStream, line: String, lineNum: Int, colNum: Int) extends LineStream(line, lineNum, colNum) {
+class LazyLineCons(override val head: Char, _tail: =>LineStream, line: String, lineNum: Int, colNum: Int, offset: Int) extends LineStream(line, lineNum, colNum, offset) {
   override lazy val tail = _tail
   
   override lazy val length = 1 + tail.length
@@ -189,7 +189,7 @@ class LazyLineCons(override val head: Char, _tail: =>LineStream, line: String, l
   def apply(i: Int) = if (i == 0) head else tail(i - 1)
 }
 
-class StrictLineCons(override val head: Char, override val tail: LineStream, line: String, lineNum: Int, colNum: Int) extends LineStream(line, lineNum, colNum) {
+class StrictLineCons(override val head: Char, override val tail: LineStream, line: String, lineNum: Int, colNum: Int, offset: Int) extends LineStream(line, lineNum, colNum, offset) {
   override lazy val length = 1 + tail.length
   
   override val isEmpty = false
@@ -197,7 +197,7 @@ class StrictLineCons(override val head: Char, override val tail: LineStream, lin
   def apply(i: Int) = if (i == 0) head else tail(i - 1)
 }
 
-object LineNil extends LineStream("", 1, 1) {
+object LineNil extends LineStream("", 1, 1, 0) {
   override val length = 0
   
   override val isEmpty = true
